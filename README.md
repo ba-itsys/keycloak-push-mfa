@@ -88,41 +88,7 @@ This project extends Keycloak with a push-style second factor that mimics passke
    }
    ```
 
-   For endpoints such as `/login/pending`, `/device/firebase`, `/device/rotate-key`, and `/login/challenges/{cid}/respond`, the device presents a lightweight **DPoP proof** in the `DPoP` header. (Enrollment completion still uses the specialized JWT described above.) The proof payload is short-lived and binds the request to a physical device:
-
-   ```json
-   {
-     "_comment": "DPoP proof payload (header for REST endpoints using device proofs)",
-     "sub": "87fa1c21-1b1e-4af8-98b1-1df2e90d3c3d",
-     "deviceId": "device-3d7a4e65-9bd6-4df3-9c7d-2b3e0ce9e1a5",
-     "exp": 1731402960
-   }
-   ```
-
-   To call those endpoints the device first requests an OAuth access token that is bound to the same key via DPoP:
-
-   ```bash
-   REALM_BASE=http://localhost:8080/realms/push-mfa
-   TOKEN_ENDPOINT="$REALM_BASE/protocol/openid-connect/token"
-   CLIENT_ID=push-device-client
-   CLIENT_SECRET=device-client-secret
-   DEVICE_JWK='{"kty":"RSA","n":"...","e":"AQAB","kid":"device-key-31c3"}'
-   DEVICE_KEY=./device-private-key.pem
-
-   # Pseudocode: construct the DPoP JWT header/payload and sign it with the device key.
-   # Header always includes the device JWK. The payload's htm/htu must match the HTTP method/URL,
-   # `sub` must be the Keycloak user id, and `deviceId` the ID assigned during enrollment.
-   DPOP_PROOF=$(echo -n "<header>.<payload>" | openssl dgst -binary -sha256 -sign "$DEVICE_KEY" | base64urlencode)
-
-   curl -s -X POST "$TOKEN_ENDPOINT" \
-     -H "DPoP: $DPOP_PROOF" \
-     -H "Content-Type: application/x-www-form-urlencoded" \
-     -d "grant_type=client_credentials" \
-     -d "client_id=$CLIENT_ID" \
-     -d "client_secret=$CLIENT_SECRET"
-   ```
-
-   The response contains `access_token`. Every subsequent REST call uses `Authorization: DPoP <access_token>` plus a fresh DPoP proof for that specific HTTP method and URL.
+   See [DPoP Authentication](#dpop-authentication) for the proof format and how access tokens are obtained.
 
 5. **Browser wait + polling:** The Keycloak login UI polls its own challenge store. Once the challenge is approved (or denied) the form resolves automatically. Polling `GET /login/pending` from the app is optional; the confirm token already carries the `cid`.
 
@@ -147,6 +113,97 @@ This project extends Keycloak with a push-style second factor that mimics passke
 - **Client behavior:** The enrollment page (`push-register.ftl`) spins up a single `EventSource` pointed at the `eventsUrl`. When a non-`PENDING` status arrives the stream is closed and the hidden `check` form is submitted, allowing Keycloak’s RequiredAction to complete without any manual refresh. If the connection drops (pod restart, network flap) the browser’s native EventSource automatically retries; the script only logs `error` events for visibility.
 
 - **No polling fallback:** Unlike earlier iterations the SSE client never schedules timer-based polling. If EventSource is missing (very old browsers) the script simply logs a warning, which is acceptable in this demo because enrollment is expected to run in modern browsers.
+
+## DPoP Authentication
+
+All push REST endpoints (except enrollment) rely on [OAuth 2.0 Demonstration of Proof-of-Possession (DPoP)](https://datatracker.ietf.org/doc/html/rfc9449) to prove that requests come from the enrolled device:
+
+1. **Device key material** is generated during enrollment. The private key stays on the device; the public key JWK is stored in Keycloak along with the `deviceId`.
+2. **Access tokens** are obtained using the device client credentials (`push-device-client`) and an attached DPoP proof. The access token’s `cnf.jkt` claim is bound to the device key’s thumbprint.
+3. **API calls** supply both `Authorization: DPoP <access_token>` and a fresh `DPoP` header that contains the HTTP method (`htm`), URI (`htu`), timestamp (`iat`), nonce (`jti`), and the same `sub`/`deviceId` used at enrollment.
+4. **Server verification** re-checks the access token signature (using the realm key), ensures the `cnf.jkt` matches the stored JWK, validates the DPoP proof (signature with the device key, method/URL, `sub`/`deviceId`, freshness), and rejects the request if any of those steps fail. The device never sees the realm’s signing key, and Keycloak never sees the private device key.
+
+### DPoP Proof Structure
+
+The proof is a signed JWT:
+
+The header embeds the device’s public JWK and the proof is signed with the corresponding private key:
+
+```json
+{
+  "alg": "RS256",
+  "typ": "dpop+jwt",
+  "jwk": {
+    "kty": "RSA",
+    "n": "…base64…",
+    "e": "AQAB",
+    "kid": "device-key-31c3"
+  }
+}
+```
+
+Payload:
+
+```json
+{
+  "htm": "POST",
+  "htu": "https://example.com/realms/push-mfa/push-mfa/login/pending",
+  "iat": 1731402960,
+  "jti": "6c1f8a0c-4c6e-4d67-b792-20fd3eb1adfc",
+  "sub": "87fa1c21-1b1e-4af8-98b1-1df2e90d3c3d",
+  "deviceId": "device-3d7a4e65-9bd6-4df3-9c7d-2b3e0ce9e1a5"
+}
+```
+
+The server rejects proofs if `htm`/`htu` don’t match the actual request, if the `sub` user doesn’t own the `deviceId`, or if the proof’s signature doesn’t verify with the stored JWK.
+
+### Obtaining a DPoP-Bound Access Token
+
+The device creates a proof for the token endpoint (`POST /protocol/openid-connect/token`), signs it with the device key, and includes it via the `DPoP` header while using the device client credentials. Pseudocode:
+
+```bash
+REALM_BASE=http://localhost:8080/realms/push-mfa
+TOKEN_ENDPOINT="$REALM_BASE/protocol/openid-connect/token"
+CLIENT_ID=push-device-client
+CLIENT_SECRET=device-client-secret
+DEVICE_KEY=./device-private-key.pem
+DEVICE_JWK='{"kty":"RSA","n":"...","e":"AQAB","kid":"device-key-31c3"}'
+
+# Create JSON header/payload, base64url-encode, and sign with DEVICE_KEY.
+DPoP_PROOF=$(echo -n "<header>.<payload>" | openssl dgst -binary -sha256 -sign "$DEVICE_KEY" | base64urlencode)
+
+curl -s -X POST "$TOKEN_ENDPOINT" \
+  -H "DPoP: $DPoP_PROOF" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=$CLIENT_ID" \
+  -d "client_secret=$CLIENT_SECRET"
+```
+
+The response’s `access_token` is then sent with `Authorization: DPoP <access_token>` on every subsequent API call along with a new DPoP header tailored to the specific endpoint. The token is a standard Keycloak JWT:
+
+Header:
+
+```json
+{ "alg": "RS256", "typ": "JWT", "kid": "realm-key-id" }
+```
+
+Payload:
+
+```json
+{
+  "iss": "http://localhost:8080/realms/push-mfa",
+  "sub": "service-account-push-device-client",
+  "aud": "account",
+  "exp": 1763381192,
+  "iat": 1763380892,
+  "azp": "push-device-client",
+  "scope": "email profile",
+  "cnf": {
+    "jkt": "s3E3x7ARe2vVffo1QOxzWIOh3aDzLzLG4zGz7d5vknU"
+  }
+}
+```
 
 ## Custom Keycloak APIs
 
@@ -263,7 +320,7 @@ The DPoP proof must be signed with the *existing* device key. After validation, 
 - **Device key material:** Generate a key pair per device, select a unique `kid`, and keep the private key in the device secure storage. Persist and exchange the public component exclusively as a JWK (the same document posted in `cnf.jwk`).
 - **State to store locally:** pseudonymous user id ↔ real Keycloak user id mapping, the device key pair, the `kid`, `deviceType`, `firebaseId`, preferred `deviceLabel`, and any metadata needed to post to Keycloak again.
 - **Confirm token handling:** When the confirm token arrives through Firebase (or when the user copies it from the waiting UI), decode the JWT, extract `cid` and `sub`, and either call `/login/pending` (optional) or immediately sign the login approval JWT and post it to `/login/challenges/{cid}/respond`.
-- **Pending challenge discovery:** Before calling `/login/pending`, mint a DPoP proof that includes the HTTP method (`htm`), full URL (`htu`), `sub`, `deviceId`, `iat`, and a fresh `jti`, and send it via the `DPoP` header so Keycloak can scope the response to that physical device.
+- **Pending challenge discovery:** Before calling `/login/pending`, build a DPoP proof that includes the HTTP method (`htm`), full URL (`htu`), `sub`, `deviceId`, `iat`, and a fresh `jti`, and send it via the `DPoP` header so Keycloak can scope the response to that physical device.
 - **Access tokens:** Obtain a short-lived access token via the realm’s token endpoint using the device client credentials. The token request itself must include a DPoP proof, and each subsequent REST call must send `Authorization: DPoP <access-token>` alongside a fresh `DPoP` header signed with the same key.
 - **Request authentication:** Every REST call (aside from enrollment, which already embeds the device key) must include a DPoP proof signed with the current device key. The proof binds the request method and URL to the hardware-backed key, making replay or reverse-engineering of a shared client secret ineffective.
 - **Error handling:** Enrollment and login requests return structured error responses (`400`, `403`, or `404`) when the JWTs are invalid, expired, or mismatched. Surface those errors to the user to re-trigger the flow if necessary.
