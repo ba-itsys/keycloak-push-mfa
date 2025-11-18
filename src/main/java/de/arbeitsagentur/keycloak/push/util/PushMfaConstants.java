@@ -1,4 +1,4 @@
-package de.arbeitsagentur.keycloak.push;
+package de.arbeitsagentur.keycloak.push.util;
 
 import java.time.Duration;
 
@@ -10,6 +10,7 @@ public final class PushMfaConstants {
     public static final String CREDENTIAL_TYPE = "push-mfa";
     public static final String PROVIDER_ID = "push-mfa-authenticator";
     public static final String USER_CREDENTIAL_DISPLAY_NAME = "Push MFA Device";
+    public static final String DEFAULT_PUSH_PROVIDER_TYPE = "log";
 
     public static final String CHALLENGE_NOTE = "push-mfa-challenge-id";
     public static final String CHALLENGE_WATCH_SECRET_NOTE = "push-mfa-challenge-watch-secret";

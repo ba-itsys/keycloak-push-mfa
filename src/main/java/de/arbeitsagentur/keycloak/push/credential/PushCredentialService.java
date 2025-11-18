@@ -1,8 +1,9 @@
-package de.arbeitsagentur.keycloak.push;
+package de.arbeitsagentur.keycloak.push.credential;
 
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import org.keycloak.credential.CredentialModel;
-import org.keycloak.models.UserModel;
 import org.keycloak.models.SubjectCredentialManager;
+import org.keycloak.models.UserModel;
 
 import java.util.List;
 import java.util.stream.Collectors;

@@ -1,5 +1,9 @@
 package de.arbeitsagentur.keycloak.push;
 
+import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
+import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
+import de.arbeitsagentur.keycloak.push.credential.PushCredentialUtils;
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import org.junit.jupiter.api.Test;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.models.SubjectCredentialManager;
@@ -45,7 +49,10 @@ class PushCredentialServiceTest {
             "RS256",
             Instant.now().toEpochMilli(),
             "ios",
-            "firebase",
+            "push-token",
+            "log",
+            null,
+            null,
             "pseudo",
             "device-1");
         CredentialModel result = PushCredentialService.createCredential(user, "Demo Device", data);
@@ -66,7 +73,10 @@ class PushCredentialServiceTest {
             "RS256",
             1L,
             "ios",
-            "fb",
+            "token-1",
+            "log",
+            null,
+            null,
             "pseudo",
             "device");
         CredentialModel model = new CredentialModel();
@@ -83,14 +93,17 @@ class PushCredentialServiceTest {
             "RS256",
             1L,
             "ios",
-            "fb2",
+            "token-2",
+            "log",
+            null,
+            null,
             "pseudo",
             "device");
         CredentialModel model = new CredentialModel();
         PushCredentialService.updateCredential(user, model, data);
         Mockito.verify(manager).updateStoredCredential(model);
         PushCredentialData read = PushCredentialUtils.fromJson(model.getCredentialData());
-        assertEquals("fb2", read.getFirebaseId());
+        assertEquals("token-2", read.getPushProviderId());
     }
 
     @Test

@@ -1,5 +1,6 @@
-package de.arbeitsagentur.keycloak.push;
+package de.arbeitsagentur.keycloak.push.auth;
 
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import org.keycloak.Config;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.authentication.AuthenticatorFactory;

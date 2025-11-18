@@ -1,4 +1,4 @@
-package de.arbeitsagentur.keycloak.push;
+package de.arbeitsagentur.keycloak.push.util;
 
 import jakarta.ws.rs.BadRequestException;
 import org.keycloak.common.VerificationException;
@@ -11,12 +11,12 @@ import org.keycloak.jose.jws.JWSInput;
 
 import java.nio.charset.StandardCharsets;
 
-final class PushSignatureVerifier {
+public final class PushSignatureVerifier {
 
     private PushSignatureVerifier() {
     }
 
-    static boolean verify(JWSInput input, KeyWrapper keyWrapper) {
+    public static boolean verify(JWSInput input, KeyWrapper keyWrapper) {
         SignatureVerifierContext verifier = context(keyWrapper);
         byte[] data = input.getEncodedSignatureInput().getBytes(StandardCharsets.US_ASCII);
         try {

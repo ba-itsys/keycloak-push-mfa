@@ -5,6 +5,7 @@ import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
+import de.arbeitsagentur.keycloak.push.resource.PushMfaResource;
 import jakarta.ws.rs.BadRequestException;
 import org.junit.jupiter.api.Test;
 import org.keycloak.crypto.KeyType;

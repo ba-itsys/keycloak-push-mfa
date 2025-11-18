@@ -1,7 +1,18 @@
-package de.arbeitsagentur.keycloak.push;
+package de.arbeitsagentur.keycloak.push.resource;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
+import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
+import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
+import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
+import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
+import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
+import de.arbeitsagentur.keycloak.push.service.PushNotificationService;
+import de.arbeitsagentur.keycloak.push.token.PushConfirmTokenBuilder;
+import de.arbeitsagentur.keycloak.push.token.PushEnrollmentTokenBuilder;
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
+import de.arbeitsagentur.keycloak.push.util.PushSignatureVerifier;
+import de.arbeitsagentur.keycloak.push.util.TokenLogHelper;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.ForbiddenException;
@@ -9,11 +20,11 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.NotAuthorizedException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
-import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
@@ -22,36 +33,36 @@ import jakarta.ws.rs.core.UriInfo;
 import jakarta.ws.rs.sse.Sse;
 import jakarta.ws.rs.sse.SseEventSink;
 import org.jboss.logging.Logger;
-import org.keycloak.credential.CredentialModel;
 import org.keycloak.TokenVerifier;
 import org.keycloak.TokenVerifier.Predicate;
 import org.keycloak.common.VerificationException;
+import org.keycloak.credential.CredentialModel;
+import org.keycloak.crypto.KeyType;
+import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.SignatureProvider;
 import org.keycloak.crypto.SignatureVerifierContext;
-import org.keycloak.crypto.KeyWrapper;
-import org.keycloak.crypto.KeyType;
+import org.keycloak.jose.jwk.JWK;
+import org.keycloak.jose.jws.Algorithm;
+import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.protocol.oidc.TokenManager;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.services.Urls;
-import org.keycloak.util.TokenUtil;
-import org.keycloak.jose.jws.Algorithm;
-import org.keycloak.jose.jws.JWSInput;
-import org.keycloak.jose.jwk.JWK;
-import org.keycloak.util.JsonSerialization;
 import org.keycloak.util.JWKSUtils;
+import org.keycloak.util.JsonSerialization;
+import org.keycloak.util.TokenUtil;
 
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
 
 @Path("/")
@@ -146,7 +157,8 @@ public class PushMfaResource {
         }
 
         String deviceType = require(jsonText(payload, "deviceType"), "deviceType");
-        String firebaseId = require(jsonText(payload, "firebaseId"), "firebaseId");
+        String pushProviderId = require(jsonText(payload, "pushProviderId"), "pushProviderId");
+        String pushProviderType = require(jsonText(payload, "pushProviderType"), "pushProviderType");
         String pseudonymousUserId = require(jsonText(payload, "pseudonymousUserId"), "pseudonymousUserId");
         String deviceId = require(jsonText(payload, "deviceId"), "deviceId");
 
@@ -160,7 +172,10 @@ public class PushMfaResource {
             algorithm.toString(),
             Instant.now().toEpochMilli(),
             deviceType,
-            firebaseId,
+            pushProviderId,
+            pushProviderType,
+            null,
+            null,
             pseudonymousUserId,
             deviceId);
         CredentialModel credentialModel = PushCredentialService.createCredential(user, label, data);
@@ -301,15 +316,19 @@ public class PushMfaResource {
     }
 
     @PUT
-    @Path("device/firebase")
+    @Path("device/push-provider")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response updateDeviceFirebaseId(@Context HttpHeaders headers,
-                                           @Context UriInfo uriInfo,
-                                           UpdateFirebaseRequest request) {
+    public Response updateDevicePushProvider(@Context HttpHeaders headers,
+                                             @Context UriInfo uriInfo,
+                                             UpdatePushProviderRequest request) {
         DeviceAssertion device = authenticateDevice(headers, uriInfo, "PUT");
-        String firebaseId = require(request.firebaseId(), "firebaseId");
+        String pushProviderId = require(request.pushProviderId(), "pushProviderId");
+        String pushProviderType = request.pushProviderType();
         PushCredentialData current = device.credentialData();
-        if (firebaseId.equals(current.getFirebaseId())) {
+        if (pushProviderType == null || pushProviderType.isBlank()) {
+            pushProviderType = current.getPushProviderType();
+        }
+        if (pushProviderId.equals(current.getPushProviderId()) && pushProviderType.equals(current.getPushProviderType())) {
             return Response.ok(Map.of("status", "unchanged")).build();
         }
         PushCredentialData updated = new PushCredentialData(
@@ -317,11 +336,14 @@ public class PushMfaResource {
             current.getAlgorithm(),
             current.getCreatedAt(),
             current.getDeviceType(),
-            firebaseId,
+            pushProviderId,
+            pushProviderType,
+            null,
+            null,
             current.getPseudonymousUserId(),
             current.getDeviceId());
         PushCredentialService.updateCredential(device.user(), device.credential(), updated);
-        LOG.infof("Updated Firebase ID for device %s (user=%s)", current.getDeviceId(), device.user().getId());
+        LOG.infof("Updated push provider {type=%s} for device %s (user=%s)", pushProviderType, current.getDeviceId(), device.user().getId());
         return Response.ok(Map.of("status", "updated")).build();
     }
 
@@ -347,7 +369,10 @@ public class PushMfaResource {
             normalizedAlgorithm,
             Instant.now().toEpochMilli(),
             current.getDeviceType(),
-            current.getFirebaseId(),
+            current.getPushProviderId(),
+            current.getPushProviderType(),
+            null,
+            null,
             current.getPseudonymousUserId(),
             current.getDeviceId());
         PushCredentialService.updateCredential(device.user(), device.credential(), updated);
@@ -547,7 +572,7 @@ public class PushMfaResource {
         return new DeviceAssertion(user, credential, credentialData);
     }
 
-    static String computeJwkThumbprint(String jwkJson) {
+    public static String computeJwkThumbprint(String jwkJson) {
         try {
             JsonNode jwk = JsonSerialization.mapper.readTree(jwkJson);
             String kty = require(jwk.path("kty").asText(null), "kty");
@@ -599,7 +624,7 @@ public class PushMfaResource {
         }
     }
 
-    static void ensureKeyMatchesAlgorithm(KeyWrapper keyWrapper, String algorithm) {
+    public static void ensureKeyMatchesAlgorithm(KeyWrapper keyWrapper, String algorithm) {
         String normalizedAlg = algorithm == null ? null : algorithm.toUpperCase();
         if (normalizedAlg == null || normalizedAlg.isBlank()) {
             throw new BadRequestException("Missing algorithm");
@@ -868,7 +893,8 @@ public class PushMfaResource {
     record ChallengeRespondRequest(@JsonProperty("token") String token) {
     }
 
-    record UpdateFirebaseRequest(@JsonProperty("firebaseId") String firebaseId) {
+    record UpdatePushProviderRequest(@JsonProperty("pushProviderId") String pushProviderId,
+                                     @JsonProperty("pushProviderType") String pushProviderType) {
     }
 
     record RotateDeviceKeyRequest(@JsonProperty("publicKeyJwk") JsonNode publicKeyJwk,

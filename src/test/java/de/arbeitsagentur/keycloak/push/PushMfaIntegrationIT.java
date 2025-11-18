@@ -122,7 +122,8 @@ public class PushMfaIntegrationIT {
         final RSAKey key;
         final String deviceId = "device-" + UUID.randomUUID();
         final String pseudonymousId = "device-alias-" + UUID.randomUUID();
-        final String firebaseId = "mock-firebase";
+        final String pushProviderId = "mock-push-provider";
+        final String pushProviderType = "log";
         final String deviceLabel = "Integration Test Device";
         String userId;
 
@@ -164,7 +165,8 @@ public class PushMfaIntegrationIT {
                 .claim("nonce", claims.getStringClaim("nonce"))
                 .claim("sub", state.userId)
                 .claim("deviceType", "ios")
-                .claim("firebaseId", state.firebaseId)
+                .claim("pushProviderId", state.pushProviderId)
+                .claim("pushProviderType", state.pushProviderType)
                 .claim("pseudonymousUserId", state.pseudonymousId)
                 .claim("deviceId", state.deviceId)
                 .claim("deviceLabel", state.deviceLabel)

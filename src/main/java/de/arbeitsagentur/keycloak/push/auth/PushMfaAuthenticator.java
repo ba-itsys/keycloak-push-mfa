@@ -1,5 +1,13 @@
-package de.arbeitsagentur.keycloak.push;
+package de.arbeitsagentur.keycloak.push.auth;
 
+import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
+import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
+import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
+import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
+import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
+import de.arbeitsagentur.keycloak.push.service.PushNotificationService;
+import de.arbeitsagentur.keycloak.push.token.PushConfirmTokenBuilder;
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
@@ -96,7 +104,8 @@ public class PushMfaAuthenticator implements Authenticator {
             confirmToken,
             credentialData.getPseudonymousUserId(),
             pushChallenge.getId(),
-            clientId);
+            clientId,
+            credentialData.getPushProviderType());
         showWaitingForm(context, pushChallenge, credentialData, confirmToken);
     }
 

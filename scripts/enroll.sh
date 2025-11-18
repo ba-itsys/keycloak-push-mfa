@@ -12,7 +12,8 @@ Environment overrides:
   DEVICE_CLIENT_ID         Client ID to request device tokens (default: push-device-client)
   DEVICE_CLIENT_SECRET     Client secret for the device client (default: device-client-secret)
   DEVICE_TYPE              Device type stored with the credential (default: ios)
-  FIREBASE_ID              Firebase/FCM identifier (default: mock-fcm-token)
+  PUSH_PROVIDER_ID         Push provider identifier/token (default: demo-push-provider-token)
+  PUSH_PROVIDER_TYPE       Push provider type / Keycloak SPI id (default: log)
   PSEUDONYMOUS_ID          Pseudonymous user identifier (default: generated UUID)
   DEVICE_ID                Unique device id stored with the credential (default: generated UUID)
   DEVICE_LABEL             Display label stored with the credential (default: "Demo Phone")
@@ -61,7 +62,8 @@ TOKEN_ENDPOINT=${TOKEN_ENDPOINT:-$REALM_BASE/protocol/openid-connect/token}
 DEVICE_CLIENT_ID=${DEVICE_CLIENT_ID:-push-device-client}
 DEVICE_CLIENT_SECRET=${DEVICE_CLIENT_SECRET:-device-client-secret}
 DEVICE_TYPE=${DEVICE_TYPE:-ios}
-FIREBASE_ID=${FIREBASE_ID:-mock-fcm-token}
+PUSH_PROVIDER_ID=${PUSH_PROVIDER_ID:-demo-push-provider-token}
+PUSH_PROVIDER_TYPE=${PUSH_PROVIDER_TYPE:-log}
 PSEUDONYMOUS_ID=${PSEUDONYMOUS_ID:-$(python3 - <<'PY'
 import uuid
 print(f"device-alias-{uuid.uuid4()}")
@@ -197,13 +199,14 @@ ENROLL_PAYLOAD_JSON=$(jq -n \
   --arg nonce "$ENROLL_NONCE" \
   --arg sub "$USER_ID" \
   --arg deviceType "$DEVICE_TYPE" \
-  --arg firebaseId "$FIREBASE_ID" \
+  --arg pushProviderId "$PUSH_PROVIDER_ID" \
+  --arg pushProviderType "$PUSH_PROVIDER_TYPE" \
   --arg pseudonymousUserId "$PSEUDONYMOUS_ID" \
   --arg deviceId "$DEVICE_ID" \
   --arg deviceLabel "$DEVICE_LABEL" \
   --arg exp "$EXPIRY" \
   --argjson cnf "$(jq -c '{"jwk": .}' device-jwk.json)" \
-  '{"enrollmentId": $enrollmentId, "nonce": $nonce, "sub": $sub, "deviceType": $deviceType, "firebaseId": $firebaseId, "pseudonymousUserId": $pseudonymousUserId, "deviceId": $deviceId, "deviceLabel": $deviceLabel, "exp": ($exp|tonumber), "cnf": $cnf}')
+  '{"enrollmentId": $enrollmentId, "nonce": $nonce, "sub": $sub, "deviceType": $deviceType, "pushProviderId": $pushProviderId, "pushProviderType": $pushProviderType, "pseudonymousUserId": $pseudonymousUserId, "deviceId": $deviceId, "deviceLabel": $deviceLabel, "exp": ($exp|tonumber), "cnf": $cnf}')
 
 ENROLL_HEADER_JSON=$(jq -nc \
   --arg alg "$DEVICE_SIGNING_ALG" \
@@ -240,7 +243,8 @@ jq -n \
   --arg privateKey "$PRIVATE_KEY_B64" \
   --arg publicKey "$PUBLIC_KEY_B64" \
   --arg deviceType "$DEVICE_TYPE" \
-  --arg firebaseId "$FIREBASE_ID" \
+  --arg pushProviderId "$PUSH_PROVIDER_ID" \
+  --arg pushProviderType "$PUSH_PROVIDER_TYPE" \
   --arg keyId "$DEVICE_KEY_ID" \
   --arg deviceLabel "$DEVICE_LABEL" \
   --argjson publicJwk "$PUBLIC_JWK" \
@@ -257,7 +261,8 @@ jq -n \
     privateKey:$privateKey,
     publicKey:$publicKey,
     deviceType:$deviceType,
-    firebaseId:$firebaseId,
+    pushProviderId:$pushProviderId,
+    pushProviderType:$pushProviderType,
     keyId:$keyId,
     deviceLabel:$deviceLabel,
     publicJwk:$publicJwk,

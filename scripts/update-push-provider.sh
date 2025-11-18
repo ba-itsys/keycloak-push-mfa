@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: scripts/update-firebase.sh <pseudonymous-user-id> <new-firebase-id>
+Usage: scripts/update-push-provider.sh <pseudonymous-user-id> <new-push-provider-id> [push-provider-type]
 
 Environment overrides:
   REALM_BASE            Realm base URL (default: stored value, fallback http://localhost:8080/realms/push-mfa)
@@ -14,13 +14,14 @@ Environment overrides:
 EOF
 }
 
-if [[ ${1:-} == "-h" || ${1:-} == "--help" || $# -ne 2 ]]; then
+if [[ ${1:-} == "-h" || ${1:-} == "--help" || $# -lt 2 || $# -gt 3 ]]; then
   usage
-  exit $([[ $# -eq 2 ]] && [[ ${1:-} != "-h" && ${1:-} != "--help" ]] && echo 1 || echo 0)
+  exit $([[ $# -ge 2 && $# -le 3 ]] && [[ ${1:-} != "-h" && ${1:-} != "--help" ]] && echo 1 || echo 0)
 fi
 
 PSEUDONYMOUS_ID=$1
-NEW_FIREBASE_ID=$2
+NEW_PUSH_PROVIDER_ID=$2
+NEW_PUSH_PROVIDER_TYPE=${3:-${PUSH_PROVIDER_TYPE:-}}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMMON_SIGN_JWS="${COMMON_SIGN_JWS:-"$SCRIPT_DIR/sign_jws.py"}"
@@ -53,6 +54,10 @@ CLIENT_ID=${DEVICE_CLIENT_ID:-$CLIENT_ID_STATE}
 CLIENT_SECRET=${DEVICE_CLIENT_SECRET:-$CLIENT_SECRET_STATE}
 SIGNING_ALG=$(echo "$STATE" | jq -r '.signingAlg // (.publicJwk.alg // "RS256")')
 SIGNING_ALG=$(common::to_upper "$SIGNING_ALG")
+CURRENT_PUSH_PROVIDER_TYPE=$(echo "$STATE" | jq -r '.pushProviderType // "log"')
+if [[ -z $NEW_PUSH_PROVIDER_TYPE ]]; then
+  NEW_PUSH_PROVIDER_TYPE=$CURRENT_PUSH_PROVIDER_TYPE
+fi
 
 if [[ -z $USER_ID || -z $DEVICE_ID || -z $PRIVATE_KEY_B64 || -z $PUBLIC_JWK ]]; then
   echo "error: device state missing required fields" >&2
@@ -74,12 +79,18 @@ if [[ -z $ACCESS_TOKEN || $ACCESS_TOKEN == "null" ]]; then
   exit 1
 fi
 
-UPDATE_URL="$REALM_BASE/push-mfa/device/firebase"
+UPDATE_URL="$REALM_BASE/push-mfa/device/push-provider"
 UPDATE_DPOP=$(common::create_dpop_proof "PUT" "$UPDATE_URL" "$KEY_FILE" "$PUBLIC_JWK" "$KEY_ID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG")
-echo ">> Updating Firebase ID for $PSEUDONYMOUS_ID"
+echo ">> Updating push provider ($NEW_PUSH_PROVIDER_TYPE) for $PSEUDONYMOUS_ID"
 curl -s -X PUT \
   -H "Authorization: DPoP $ACCESS_TOKEN" \
   -H "DPoP: $UPDATE_DPOP" \
   -H "Content-Type: application/json" \
-  -d "$(jq -n --arg firebaseId "$NEW_FIREBASE_ID" '{"firebaseId": $firebaseId}')" \
+  -d "$(jq -n --arg pushProviderId "$NEW_PUSH_PROVIDER_ID" --arg pushProviderType "$NEW_PUSH_PROVIDER_TYPE" '{"pushProviderId": $pushProviderId, "pushProviderType": $pushProviderType}')" \
   "$UPDATE_URL" | jq
+
+tmp_state="$(mktemp)"
+jq --arg pushProviderId "$NEW_PUSH_PROVIDER_ID" --arg pushProviderType "$NEW_PUSH_PROVIDER_TYPE" \
+  '.pushProviderId = $pushProviderId | .pushProviderType = $pushProviderType' \
+  "$STATE_FILE" > "$tmp_state"
+mv "$tmp_state" "$STATE_FILE"

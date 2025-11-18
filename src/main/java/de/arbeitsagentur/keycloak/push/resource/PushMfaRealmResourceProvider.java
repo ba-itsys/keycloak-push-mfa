@@ -1,4 +1,4 @@
-package de.arbeitsagentur.keycloak.push;
+package de.arbeitsagentur.keycloak.push.resource;
 
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.services.resource.RealmResourceProvider;

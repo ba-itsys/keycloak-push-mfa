@@ -38,7 +38,8 @@
      "nonce": "JYlLk0d9h9zGN7kMd8n5Vw",
      "sub": "87fa1c21-1b1e-4af8-98b1-1df2e90d3c3d",
      "deviceType": "ios",
-     "firebaseId": "mock-fcm-token",
+     "pushProviderId": "mock-provider-token",
+     "pushProviderType": "log",
      "pseudonymousUserId": "device-alias-bf7a9f52",
      "deviceId": "device-3d7a4e65-9bd6-4df3-9c7d-2b3e0ce9e1a5",
      "deviceLabel": "Demo Phone",
@@ -57,11 +58,11 @@
    }
    ```
 
-3. **Confirm token delivery:** Every login creates a fresh push challenge. Keycloak signs a `confirmToken` using the realm key and displays/logs it. This token is what would be sent via Firebase: it only contains the pseudonymous user id and the challenge id (`cid`), so the push provider learns nothing about the real user or that it is a login.
+3. **Confirm token delivery:** Every login creates a fresh push challenge. Keycloak signs a `confirmToken` using the realm key and displays/logs it. This token is what would be sent via your push provider (Firebase/FCM in the demo implementation): it only contains the pseudonymous user id and the challenge id (`cid`), so the push provider learns nothing about the real user or that it is a login.
 
    ```json
    {
-     "_comment": "confirmToken payload (realm -> device via Firebase/FCM)",
+     "_comment": "confirmToken payload (realm -> device via push provider such as Firebase/FCM)",
      "iss": "http://localhost:8080/realms/push-mfa",
      "sub": "device-alias-bf7a9f52",
      "typ": "1",
@@ -234,7 +235,7 @@ Content-Type: application/json
 }
 ```
 
-Keycloak verifies the signature using `cnf.jwk`, persists the credential (JWK, algorithm, deviceType, firebaseId, pseudonymousUserId, deviceId, deviceLabel), and resolves the enrollment challenge. The `deviceLabel` is read from the JWT payload (falls back to `PushMfaConstants.USER_CREDENTIAL_DISPLAY_NAME` when absent).
+Keycloak verifies the signature using `cnf.jwk`, persists the credential (JWK, algorithm, deviceType, `pushProviderId`, `pushProviderType`, pseudonymousUserId, deviceId, deviceLabel), and resolves the enrollment challenge. The `pushProviderId` value is whatever identifier your push backend requires (for example an FCM registration token or an APNs device token), while `pushProviderType` selects the Keycloak `PushNotificationSender` provider that should deliver the confirm token. The bundled logging implementation exposes the type `log`, which simply prints the payload. Your scripts use `pushProviderType=log` by default, but real deployments can plug in any provider via the [Push Notification SPI](#push-notification-spi). The `deviceLabel` is read from the JWT payload (falls back to `PushMfaConstants.USER_CREDENTIAL_DISPLAY_NAME` when absent).
 
 ```json
 {
@@ -288,22 +289,23 @@ Keycloak verifies the DPoP proof to authenticate the device, then validates the 
 { "status": "approved" }
 ```
 
-### Update the Firebase registration
+### Update the push provider
 
 ```
-PUT /realms/push-mfa/push-mfa/device/firebase
+PUT /realms/push-mfa/push-mfa/device/push-provider
 Authorization: DPoP <access-token>
 DPoP: <proof JWT>
 Content-Type: application/json
 
 {
-  "firebaseId": "new-fcm-token"
+  "pushProviderId": "new-provider-token",
+  "pushProviderType": "log"
 }
 ```
 
-Keycloak authenticates the request with the current device key and replaces the stored Firebase/FCM identifier tied to that credential. The response body is `{ "status": "updated" }` (or `"unchanged"` if the value was already in sync).
+Keycloak authenticates the request with the current device key and replaces the stored push provider identifier and/or type tied to that credential. The response body is `{ "status": "updated" }` (or `"unchanged"` if the values were already in sync). Use this endpoint whenever your downstream push provider rotates registration tokens (e.g., new FCM registration token, APNs device token refresh, proprietary push subscription id, etc.), or when you want to switch to a different `PushNotificationSender` implementation. Omitting `pushProviderType` keeps the existing type.
 
-> Demo helper: `scripts/update-firebase.sh <pseudonymous-id> <new-firebase-id>`
+> Demo helper: `scripts/update-push-provider.sh <pseudonymous-id> <provider-id> [provider-type]`
 
 ### Rotate the device key
 
@@ -336,7 +338,7 @@ The repository includes thin shell wrappers that simulate a device:
 
 - `scripts/enroll.sh <enrollment-token>` decodes the QR payload, generates a key pair (RSA or EC), and completes enrollment.
 - `scripts/confirm-login.sh <confirm-token>` decodes the Firebase-style payload, lists pending challenges (for demo visibility), and approves/denies the challenge.
-- `scripts/update-firebase.sh <pseudonymous-id> <firebase-id>` updates the stored push registration.
+- `scripts/update-push-provider.sh <pseudonymous-id> <provider-id> [provider-type]` updates the stored push provider metadata (defaults to the `log` provider used in this demo).
 - `scripts/rotate-device-key.sh <pseudonymous-id>` rotates the device key material and immediately persists the new JWK/algorithm.
 
 All scripts source `scripts/common.sh`, which centralizes base64 helpers, compact-JWS signing, DPoP proof creation, and token acquisition. The helper expects `scripts/sign_jws.py` to exist (or `COMMON_SIGN_JWS` to point to a compatible signer), so replacing the demo logic with a real implementation only requires swapping in a different signer.
@@ -346,15 +348,66 @@ All scripts source `scripts/common.sh`, which centralizes base64 helpers, compac
 - **Realm verification:** Enrollment starts when the app scans the QR code and reads `enrollmentToken`. Verify the JWT with the realm JWKS (`/realms/push-mfa/protocol/openid-connect/certs`) before trusting its contents.
 - **Device key material:** Generate a key pair per device, select a unique `kid`, and keep the private key in the device secure storage. Persist and exchange the public component exclusively as a JWK (the same document posted in `cnf.jwk`).
 - **Algorithm choice:** The demo scripts default to RSA/RS256 but also support EC keys and ECDSA proofs—set `DEVICE_KEY_TYPE=EC`, pick a curve via `DEVICE_EC_CURVE` (P-256/384/521), and override `DEVICE_SIGNING_ALG` if you need ES256/384/512. The selected algorithm is stored with the credential so Keycloak enforces it for all future DPoP proofs, login approvals, and rotation requests.
-- **State to store locally:** pseudonymous user id ↔ real Keycloak user id mapping, the device key pair, the `kid`, `deviceType`, `firebaseId`, preferred `deviceLabel`, and any metadata needed to post to Keycloak again.
+- **State to store locally:** pseudonymous user id ↔ real Keycloak user id mapping, the device key pair, the `kid`, `deviceType`, `pushProviderId`, `pushProviderType`, preferred `deviceLabel`, and any metadata needed to post to Keycloak again.
 - **Confirm token handling:** When the confirm token arrives through Firebase (or when the user copies it from the waiting UI), decode the JWT, extract `cid` and `sub`, and either call `/login/pending` (optional) or immediately sign the login approval JWT and post it to `/login/challenges/{cid}/respond`.
 - **Pending challenge discovery:** Before calling `/login/pending`, build a DPoP proof that includes the HTTP method (`htm`), full URL (`htu`), `sub`, `deviceId`, `iat`, and a fresh `jti`, and send it via the `DPoP` header so Keycloak can scope the response to that physical device.
 - **Access tokens:** Obtain a short-lived access token via the realm’s token endpoint using the device client credentials. The token request itself must include a DPoP proof, and each subsequent REST call must send `Authorization: DPoP <access-token>` alongside a fresh `DPoP` header signed with the same key.
 - **Request authentication:** Every REST call (aside from enrollment, which already embeds the device key) must include a DPoP proof signed with the current device key. The proof binds the request method and URL to the hardware-backed key, making replay or reverse-engineering of a shared client secret ineffective.
 - **Error handling:** Enrollment and login requests return structured error responses (`400`, `403`, or `404`) when the JWTs are invalid, expired, or mismatched. Surface those errors to the user to re-trigger the flow if necessary.
-- **Key rotation / Firebase changes:** Use the `/device/firebase` and `/device/rotate-key` endpoints (described above) to update the stored metadata while authenticating with the current device key. Rotation should generate a fresh key pair, send the public JWK + algorithm, and immediately start using the new key for every subsequent JWT.
+- **Key rotation / push provider changes:** Use the `/device/push-provider` and `/device/rotate-key` endpoints (described above) to update the stored metadata while authenticating with the current device key. Rotation should generate a fresh key pair, send the public JWK + algorithm, and immediately start using the new key for every subsequent JWT.
+
+## Push Notification SPI
+
+The server emits confirm tokens through the `PushNotificationSender` SPI. Each device credential stores a `pushProviderId` (opaque token/identifier for your push backend) and a `pushProviderType` (the Keycloak SPI provider id). At runtime `PushNotificationService` resolves the SPI implementation by calling `session.getProvider(PushNotificationSender.class, pushProviderType)` and passes in the `pushProviderId`. The bundled `log` provider simply prints the payload, but you can plug in a real APNs/FCM sender by implementing:
+
+```java
+public final class MyPushSender implements PushNotificationSender {
+    @Override
+    public void send(KeycloakSession session,
+                     RealmModel realm,
+                     UserModel user,
+                     String confirmToken,
+                     String pseudonymousUserId,
+                     String challengeId,
+                     String clientId) {
+        // Serialize confirmToken into the mobile push message and deliver it via FCM/APNs/etc.
+    }
+}
+```
+
+Create a matching factory:
+
+```java
+public final class MyPushSenderFactory implements PushNotificationSenderFactory {
+    @Override
+    public PushNotificationSender create(KeycloakSession session) {
+        return new MyPushSender();
+    }
+    @Override public String getId() { return "fcm"; }
+    // init/postInit/close can remain empty
+}
+```
+
+Register the factory using the standard Keycloak service loader entries:
+
+```
+META-INF/services/org.keycloak.provider.Spi
+META-INF/services/org.keycloak.provider.ProviderFactory
+```
+
+Finally, select the provider (for example in `keycloak.conf` or via `--spi-push-notification-sender-provider=fcm`). Once configured, every push challenge that carries `pushProviderType=fcm` uses your implementation instead of the built-in `log` fallback (which simply prints tokens to stdout). Demo scripts keep sending `pushProviderType=log`, so they continue using the logging behavior unless you change their configuration.
 
 With these primitives an actual mobile app UI or automation can be layered on top without depending on helper shell scripts.
+
+## Customizing the Keycloak UI
+
+The provider ships with a lightweight theme fragment under `src/main/resources/theme-resources/`. When the extension is built, those assets are copied into the deployed theme so you can either customize them in-place or copy them into your own Keycloak theme module and override the templates via standard theme selection. The bundle contains:
+
+- **Enrollment (Required Action)** – `templates/push-register.ftl` renders the QR code, enrollment token, and SSE watcher while the user finishes onboarding. The markup is fully self-contained: everything is driven by `data-push-*` attributes on the root element plus localized strings from `messages/messages_en.properties`. To restyle the screen, replace the HTML/CSS and keep emitting the same attributes (or call `KeycloakPushMfa.initRegisterPage(...)` manually) so the QR code and SSE wiring continue to function.
+- **Login waiting UI** – `templates/push-wait.ftl` powers the “waiting for approval” screen. It subscribes to the challenge SSE endpoint via the same data attributes and optionally shows the confirm token for demo purposes. Swap the layout or remove the token preview altogether; just ensure the `data-push-*` attributes remain if you still rely on `KeycloakPushMfa.initLoginPage(...)`.
+- **Terminal pages** – `templates/push-denied.ftl` and `templates/push-expired.ftl` explain why a login stopped (canceled, denied, expired). These files only display localized strings, so they are easy to rebrand or translate by editing the template and updating the corresponding entries in `messages/messages_<locale>.properties`.
+
+All shared browser behavior (SSE handling, QR rendering, clipboard helpers) lives in `resources/js/push-mfa.js`. The script exposes `KeycloakPushMfa.initRegisterPage`, `KeycloakPushMfa.initLoginPage`, and `KeycloakPushMfa.autoInit`, so if you move to a different frontend stack you can reuse those helpers or replace them entirely with your own EventSource/QR logic. Because every UI asset is a regular Keycloak theme resource, you customize them the same way as any other login theme: copy the template/JS/message files into your custom theme folder, adjust them, and point the realm to that theme via the admin console or `keycloak.conf`.
 
 ## Security Guarantees and Mobile Obligations
 
@@ -374,5 +427,5 @@ With these primitives an actual mobile app UI or automation can be layered on to
 - **Protect the device key pair:** Generate it with high-entropy sources, store the private key in Secure Enclave/Keystore/KeyChain, and never export it. Rotate/re-enroll immediately if compromise is suspected.
 - **Enforce challenge integrity:** When a confirm token arrives, compare the `cid`, `sub`, and `client_id` against locally stored state and discard anything unexpected or expired.
 - **Secure transport:** Call the Keycloak endpoints only over TLS, validate certificates (no user-controlled CA overrides), and pin if your threat model requires it.
-- **Harden local state:** Keep the pseudonymous ↔ real user mapping, firebase identifiers, and enrollment metadata in encrypted storage with OS-level protection.
+- **Harden local state:** Keep the pseudonymous ↔ real user mapping, push provider identifiers/types, and enrollment metadata in encrypted storage with OS-level protection.
 - **Surface errors to users:** Treat 4xx responses (expired, invalid signature, nonce mismatch) as security events, notifying the user and requiring a fresh enrollment or login attempt rather than silently retrying.

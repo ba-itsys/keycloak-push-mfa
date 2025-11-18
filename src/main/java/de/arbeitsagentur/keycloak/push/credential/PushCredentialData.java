@@ -1,7 +1,8 @@
-package de.arbeitsagentur.keycloak.push;
+package de.arbeitsagentur.keycloak.push.credential;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 
 public class PushCredentialData {
 
@@ -9,7 +10,8 @@ public class PushCredentialData {
     private final String algorithm;
     private final long createdAt;
     private final String deviceType;
-    private final String firebaseId;
+    private final String pushProviderId;
+    private final String pushProviderType;
     private final String pseudonymousUserId;
     private final String deviceId;
 
@@ -18,14 +20,20 @@ public class PushCredentialData {
                               @JsonProperty("algorithm") String algorithm,
                               @JsonProperty("createdAt") long createdAt,
                               @JsonProperty("deviceType") String deviceType,
-                              @JsonProperty("firebaseId") String firebaseId,
+                              @JsonProperty("pushProviderId") String pushProviderId,
+                              @JsonProperty("pushProviderType") String pushProviderType,
+                              @JsonProperty("pushRegistrationToken") String legacyPushRegistrationToken,
+                              @JsonProperty("firebaseId") String legacyFirebaseId,
                               @JsonProperty("pseudonymousUserId") String pseudonymousUserId,
                               @JsonProperty("deviceId") String deviceId) {
         this.publicKeyJwk = publicKeyJwk;
         this.algorithm = algorithm;
         this.createdAt = createdAt;
         this.deviceType = deviceType;
-        this.firebaseId = firebaseId;
+        this.pushProviderId = firstNonNull(pushProviderId, legacyPushRegistrationToken, legacyFirebaseId);
+        this.pushProviderType = (pushProviderType == null || pushProviderType.isBlank())
+            ? PushMfaConstants.DEFAULT_PUSH_PROVIDER_TYPE
+            : pushProviderType;
         this.pseudonymousUserId = pseudonymousUserId;
         this.deviceId = deviceId;
     }
@@ -46,8 +54,12 @@ public class PushCredentialData {
         return deviceType;
     }
 
-    public String getFirebaseId() {
-        return firebaseId;
+    public String getPushProviderId() {
+        return pushProviderId;
+    }
+
+    public String getPushProviderType() {
+        return pushProviderType;
     }
 
     public String getPseudonymousUserId() {
@@ -56,5 +68,17 @@ public class PushCredentialData {
 
     public String getDeviceId() {
         return deviceId;
+    }
+
+    private static String firstNonNull(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 }

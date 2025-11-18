@@ -1,4 +1,4 @@
-package de.arbeitsagentur.keycloak.push;
+package de.arbeitsagentur.keycloak.push.challenge;
 
 import java.time.Instant;
 import java.util.Arrays;

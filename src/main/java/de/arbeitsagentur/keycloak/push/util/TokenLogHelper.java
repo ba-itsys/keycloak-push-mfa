@@ -1,18 +1,18 @@
-package de.arbeitsagentur.keycloak.push;
+package de.arbeitsagentur.keycloak.push.util;
 
 import org.jboss.logging.Logger;
 import org.keycloak.util.JsonSerialization;
 
 import java.util.Base64;
 
-final class TokenLogHelper {
+public final class TokenLogHelper {
 
     private static final Logger LOG = Logger.getLogger(TokenLogHelper.class);
 
     private TokenLogHelper() {
     }
 
-    static void logJwt(String label, String token) {
+    public static void logJwt(String label, String token) {
         if (token == null || token.isBlank()) {
             LOG.infof("%s token: <empty>", label);
             return;
