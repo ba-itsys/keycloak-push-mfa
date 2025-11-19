@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:26.4.2
+    image: quay.io/keycloak/keycloak:26.4.5
     command:
       - start-dev
       - --debug
@@ -12,11 +12,10 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_LOG_LEVEL: info
-      KC_FEATURES: dpop
       JAVA_OPTS_APPEND: -Dkeycloak.migration.dir=/opt/keycloak/data/import -Dkeycloak.migration.strategy=OVERWRITE_EXISTING
     ports:
       - "8080:8080"
       - "8787:8787"
     volumes:
-      - ./target/keycloak-push-mfa-1.0.0-SNAPSHOT.jar:/opt/keycloak/providers/keycloak-push-mfa.jar:ro
+      - ./target/keycloak-push-mfa-extension-1.0.0-SNAPSHOT.jar:/opt/keycloak/providers/keycloak-push-mfa.jar:ro
       - ./config:/opt/keycloak/data/import:ro
