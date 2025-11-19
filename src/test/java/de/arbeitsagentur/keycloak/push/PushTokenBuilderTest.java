@@ -63,8 +63,8 @@ class PushTokenBuilderTest {
         assertEquals("challenge-123", claims.getStringClaim("cid"));
         assertEquals("test-client", claims.getStringClaim("client_id"));
         assertEquals("http://localhost:8080/realms/push-mfa", claims.getIssuer());
-        assertEquals(PushMfaConstants.PUSH_MESSAGE_TYPE, claims.getStringClaim("typ"));
-        assertEquals(PushMfaConstants.PUSH_MESSAGE_VERSION, claims.getStringClaim("ver"));
+        assertEquals(PushMfaConstants.PUSH_MESSAGE_TYPE, claims.getIntegerClaim("typ"));
+        assertEquals(PushMfaConstants.PUSH_MESSAGE_VERSION, claims.getIntegerClaim("ver"));
         assertEquals(Date.from(Instant.ofEpochSecond(1700000100)), claims.getExpirationTime());
         assertEquals(keyWrapper.getKid(), jwt.getHeader().getKeyID());
         assertEquals(Algorithm.RS256.toString(), jwt.getHeader().getAlgorithm().getName());

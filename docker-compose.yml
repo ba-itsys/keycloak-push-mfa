@@ -11,7 +11,7 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
-      KC_LOG_LEVEL: info,de.arbeitsagentur.keycloak.push=debug
+      KC_LOG_LEVEL: info,de.arbeitsagentur.keycloak.push:debug
       JAVA_OPTS_APPEND: -Dkeycloak.migration.dir=/opt/keycloak/data/import -Dkeycloak.migration.strategy=OVERWRITE_EXISTING
     ports:
       - "8080:8080"

@@ -19,7 +19,7 @@ final class LoggingPushNotificationSender implements PushNotificationSender {
                      String pseudonymousUserId,
                      String challengeId,
                      String clientId) {
-        LOG.infof("Simulated push {realm=%s,user=%s,version=%s,type=%s,pseudonymousUserId=%s,challengeId=%s,clientId=%s}",
+        LOG.infof("Simulated push {realm=%s,user=%s,version=%d,type=%d,pseudonymousUserId=%s,challengeId=%s,clientId=%s}",
             realm.getName(),
             user.getUsername(),
             PushMfaConstants.PUSH_MESSAGE_VERSION,

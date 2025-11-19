@@ -92,7 +92,7 @@ public class PushMfaAuthenticator implements Authenticator {
             context.getUriInfo().getBaseUri(),
             clientId);
 
-        LOG.debugf("Push message prepared {version=%s,type=%s,pseudonymousUserId=%s}",
+        LOG.debugf("Push message prepared {version=%d,type=%d,pseudonymousUserId=%s}",
             PushMfaConstants.PUSH_MESSAGE_VERSION,
             PushMfaConstants.PUSH_MESSAGE_TYPE,
             credentialData.getPseudonymousUserId());
@@ -241,8 +241,8 @@ public class PushMfaAuthenticator implements Authenticator {
             .setAttribute("pushUsername", context.getUser().getUsername())
             .setAttribute("pushConfirmToken", confirmToken)
             .setAttribute("pushPseudonymousId", credentialData != null ? credentialData.getPseudonymousUserId() : null)
-            .setAttribute("pushMessageVersion", PushMfaConstants.PUSH_MESSAGE_VERSION)
-            .setAttribute("pushMessageType", PushMfaConstants.PUSH_MESSAGE_TYPE);
+            .setAttribute("pushMessageVersion", String.valueOf(PushMfaConstants.PUSH_MESSAGE_VERSION))
+            .setAttribute("pushMessageType", String.valueOf(PushMfaConstants.PUSH_MESSAGE_TYPE));
 
         String watchUrl = buildChallengeWatchUrl(context, challengeId, watchSecret);
         if (watchUrl != null) {
